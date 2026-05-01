@@ -35,10 +35,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
 
       - name: Install dependencies
-        run: npm ci
+        # Using `npm install` (not `npm ci`) because we don't ship a
+        # package-lock.json. The workflow generates one on the fly.
+        # First build is ~30s slower without npm's cache; that's fine for
+        # a project that builds once or twice a day.
+        run: npm install
 
       - name: Detect base path
         id: base
