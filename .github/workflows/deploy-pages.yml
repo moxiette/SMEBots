@@ -1,0 +1,81 @@
+# GitHub Actions workflow that builds the Next.js app and publishes the
+# resulting static site to GitHub Pages on every push to main.
+#
+# Setup steps (one-time, in the repo's GitHub UI):
+#   1. Settings → Pages → "Build and deployment" → Source: "GitHub Actions"
+#   2. (Optional) If your repo is at username.github.io/REPO_NAME instead of
+#      a custom domain, set the BASE_PATH variable below to "/REPO_NAME".
+#      Without that, asset URLs will 404 because Next emits root-relative paths.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Detect base path
+        id: base
+        run: |
+          # If repo is published at username.github.io (i.e., the repo IS named
+          # username.github.io), no base path is needed. Otherwise the site
+          # lives at username.github.io/REPO_NAME and needs basePath=/REPO_NAME.
+          REPO_NAME="${GITHUB_REPOSITORY##*/}"
+          OWNER_LOWER="$(echo ${GITHUB_REPOSITORY%%/*} | tr '[:upper:]' '[:lower:]')"
+          REPO_LOWER="$(echo $REPO_NAME | tr '[:upper:]' '[:lower:]')"
+          if [ "$REPO_LOWER" = "${OWNER_LOWER}.github.io" ]; then
+            echo "base_path=" >> $GITHUB_OUTPUT
+          else
+            echo "base_path=/${REPO_NAME}" >> $GITHUB_OUTPUT
+          fi
+          echo "Detected base_path: '${{ steps.base.outputs.base_path }}'"
+
+      - name: Build static site
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.base.outputs.base_path }}
+        run: npm run build
+
+      - name: Disable Jekyll on Pages
+        run: touch out/.nojekyll
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
