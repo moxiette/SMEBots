@@ -30,14 +30,16 @@ const nextConfig = {
     NEXT_PUBLIC_BASE_PATH: basePath,
   },
   webpack: (config, { dev, isServer }) => {
-    // Only collapse chunks for client-side production builds.
-    // Leave dev and server builds alone.
+    // Only adjust client-side production builds.
     if (!dev && !isServer) {
       config.optimization.splitChunks = {
         chunks: "all",
-        // Single shared vendor chunk for everything from node_modules.
-        // ExcelJS / docx / framer-motion / react / etc. all land in one
-        // file. Larger first download but fewer total files to upload.
+        // Cap each chunk at ~450KB so corporate proxies (which often
+        // reject or deep-inspect files >1MB) don't block the upload.
+        // ExcelJS, docx, framer-motion, etc. get split across several
+        // medium-sized files instead of bundled into one large file.
+        maxSize: 450_000,
+        minSize: 20_000,
         cacheGroups: {
           default: false,
           vendors: false,
@@ -49,11 +51,19 @@ const nextConfig = {
             enforce: true,
           },
           lib: {
-            name: "lib",
             test: /[\\/]node_modules[\\/]/,
             priority: 30,
             chunks: "all",
-            enforce: true,
+            // Don't pin to a single name — let webpack split into
+            // multiple lib-*.js files if total exceeds maxSize.
+            name(module) {
+              const match = module.context?.match(
+                /[\\/]node_modules[\\/](.*?)([\\/]|$)/
+              );
+              const pkg = match ? match[1].replace("@", "").replace("/", "-") : "vendor";
+              return `lib-${pkg}`;
+            },
+            reuseExistingChunk: true,
           },
           shared: {
             name: "shared",
@@ -63,9 +73,6 @@ const nextConfig = {
             reuseExistingChunk: true,
           },
         },
-        // Cap at a small number of chunks to keep file count low.
-        maxInitialRequests: 6,
-        maxAsyncRequests: 6,
       };
     }
     return config;
